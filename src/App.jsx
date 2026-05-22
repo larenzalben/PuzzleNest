@@ -766,7 +766,7 @@ function generateSudoku(difficulty) {
 // As of May 2026 it proxies to Google's Gemini API (free tier). The `model`
 // field here is informational only — the proxy ignores it. Likewise the
 // `useWebSearch` flag is currently a no-op on the Gemini proxy.
-async function callClaude(prompt, useWebSearch = false, maxTokens = 1000) {
+async function callClaude(prompt, useWebSearch = false, maxTokens = 4000) {
   const body = {
     model: "auto",
     max_tokens: maxTokens,
@@ -2159,7 +2159,7 @@ function PuzzleApp({ onLogoTap }) {
       } else if (gameType === "Crossword") {
         const wordCountMap = { Beginner:6, Intermediate:8, Advanced:10, Extreme:12 };
         const wordsPrompt = `Create a crossword puzzle with exactly ${wordCountMap[difficulty]} words on the theme "${activeTheme}".\n\nReturn ONLY a JSON object, no explanation, no markdown. Format:\n{\n  "title": "Fun Puzzle Title",\n  "words": [\n    {"word": "EXAMPLE", "clue": "A sample or instance"}\n  ]\n}\n\nRules:\n- All words uppercase, letters only (no spaces, hyphens, or punctuation)\n- Words between 3 and 10 letters long\n- Clues should be concise (under 10 words)\n- Choose words that share common letters so they can intersect\n- Return ONLY the JSON object`;
-        const wordsRaw = await callClaude(wordsPrompt, false, 1000);
+        const wordsRaw = await callClaude(wordsPrompt, false, 4000);
         const wordsData = parseJSON(wordsRaw);
         const words = wordsData.words || [];
         if (!words.length) throw new Error("No words returned from API");
@@ -2169,7 +2169,7 @@ function PuzzleApp({ onLogoTap }) {
       } else if (gameType === "Word Scramble") {
         const countMap = { Beginner:6, Intermediate:8, Advanced:10, Extreme:12 };
         const prompt = `Create a word scramble puzzle with ${countMap[difficulty]} words on the theme "${activeTheme}".\n\nReturn ONLY a JSON object, no explanation, no markdown:\n{\n  "title": "Fun Puzzle Title",\n  "words": [\n    {"word": "EXAMPLE", "clue": "A sample or instance of something"},\n    {"word": "ANOTHER", "clue": "One more of the same"}\n  ]\n}\n\nRules:\n- All words uppercase, letters only, no spaces or hyphens\n- ${difficulty === "Beginner" ? "Words 4–5 letters long" : difficulty === "Intermediate" ? "Words 5–7 letters long" : difficulty === "Advanced" ? "Words 6–9 letters long" : "Words 7–12 letters long"}\n- Clues should be helpful definitions (10–15 words)\n- Return ONLY the JSON object`;
-        const raw = await callClaude(prompt, false, 1000);
+        const raw = await callClaude(prompt, false, 4000);
         const parsed = parseJSON(raw);
         if (!parsed.words?.length) throw new Error("No words returned from API");
         setPuzzle({ type:"Word Scramble", title:parsed.title || `${activeTheme} Word Scramble`, words:parsed.words, difficulty });
@@ -2195,7 +2195,7 @@ Rules:
 - pangrams: words that use all 7 letters at least once (can be empty array if none)
 - Aim for a theme-inspired letter set and title
 - Return ONLY the JSON object`;
-        const raw = await callClaude(prompt, false, 1500);
+        const raw = await callClaude(prompt, false, 6000);
         const parsed = parseJSON(raw);
         if (!parsed.validWords?.length || !parsed.centerLetter) throw new Error("Invalid Spelling Bee data from API");
         setPuzzle({ type:"Spelling Bee", title:parsed.title || `${activeTheme} Spelling Bee`, centerLetter:parsed.centerLetter.toUpperCase(), outerLetters:parsed.outerLetters.map(l=>l.toUpperCase()), validWords:parsed.validWords.map(w=>w.toUpperCase()), pangrams:(parsed.pangrams||[]).map(p=>p.toUpperCase()), difficulty });
@@ -2352,7 +2352,7 @@ Rules:
                                 if (!parsed.words?.length) throw new Error("No words returned");
                                 setPuzzle({ type:"Word Scramble", title:parsed.title || `${b.theme} Word Scramble`, words:parsed.words, difficulty:"Intermediate" });
                               } else if (b.type === "Spelling Bee") {
-                                const raw = await callClaude(`Create a Spelling Bee puzzle on the theme "${b.theme}".\nChoose 7 letters (1 center + 6 outer) so many English words can be formed.\nReturn ONLY a JSON object:\n{"title":"...","centerLetter":"A","outerLetters":["B","C","D","E","F","G"],"validWords":["WORD1","WORD2",...],"pangrams":[]}\nRules: 25+ common words min 4 letters, all must contain center letter, use only the 7 letters (can repeat), uppercase throughout.`, false, 1500);
+                                const raw = await callClaude(`Create a Spelling Bee puzzle on the theme "${b.theme}".\nChoose 7 letters (1 center + 6 outer) so many English words can be formed.\nReturn ONLY a JSON object:\n{"title":"...","centerLetter":"A","outerLetters":["B","C","D","E","F","G"],"validWords":["WORD1","WORD2",...],"pangrams":[]}\nRules: 25+ common words min 4 letters, all must contain center letter, use only the 7 letters (can repeat), uppercase throughout.`, false, 6000);
                                 const parsed = parseJSON(raw);
                                 if (!parsed.validWords?.length || !parsed.centerLetter) throw new Error("Invalid Spelling Bee data");
                                 setPuzzle({ type:"Spelling Bee", title:parsed.title||`${b.theme} Spelling Bee`, centerLetter:parsed.centerLetter.toUpperCase(), outerLetters:parsed.outerLetters.map(l=>l.toUpperCase()), validWords:parsed.validWords.map(w=>w.toUpperCase()), pangrams:(parsed.pangrams||[]).map(p=>p.toUpperCase()), difficulty:"Intermediate" });
