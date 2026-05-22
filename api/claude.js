@@ -78,7 +78,7 @@ export default async function handler(req, res) {
   const geminiBody = {
     contents,
     generationConfig: {
-      maxOutputTokens: body.max_tokens || 1024,
+      maxOutputTokens: body.max_tokens || 4096,
       temperature: 0.9,
       // Force valid JSON output. Every PuzzleNest call asks for JSON, and
       // this prevents Gemini from wrapping the JSON in prose or markdown
