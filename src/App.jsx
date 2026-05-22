@@ -805,11 +805,15 @@ async function callClaude(prompt, useWebSearch = false, maxTokens = 1000) {
 }
 
 function parseJSON(raw) {
-  let cleaned = raw.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+  // Strip markdown fences (```json, ```, ~~~).
+  let cleaned = raw.replace(/```(?:json|javascript|js)?\s*/gi, "").replace(/```\s*/g, "").replace(/~~~\s*/g, "").trim();
   const start = cleaned.search(/[\[{]/);
-  if (start === -1) throw new Error("No JSON found in response");
+  if (start === -1) {
+    const preview = raw.slice(0, 120).replace(/\s+/g, " ").trim();
+    throw new Error(`No JSON found in response. First 120 chars: ${preview || "(empty)"}`);
+  }
   const opener = cleaned[start], closer = opener === "[" ? "]" : "}";
-  let depth = 0, inStr = false, escape = false;
+  let depth = 0, inStr = false, escape = false, end = -1;
   for (let i = start; i < cleaned.length; i++) {
     const ch = cleaned[i];
     if (escape) { escape = false; continue; }
@@ -817,9 +821,31 @@ function parseJSON(raw) {
     if (ch === '"') { inStr = !inStr; continue; }
     if (inStr) continue;
     if (ch === opener) depth++;
-    else if (ch === closer) { depth--; if (depth === 0) return JSON.parse(cleaned.slice(start, i+1)); }
+    else if (ch === closer) { depth--; if (depth === 0) { end = i; break; } }
   }
-  throw new Error("Malformed JSON in response");
+  if (end === -1) {
+    // Brace never closed — likely truncated by max_tokens.
+    const preview = cleaned.slice(start, Math.min(start + 120, cleaned.length)).replace(/\s+/g, " ");
+    throw new Error(`Truncated JSON (no closing ${closer}). Possibly hit max_tokens. Got: ${preview}…`);
+  }
+
+  let slice = cleaned.slice(start, end + 1);
+
+  // Try direct parse first.
+  try { return JSON.parse(slice); } catch (e1) {
+    // Tolerate common Gemini quirks: line comments, block comments, trailing commas.
+    let repaired = slice
+      // Strip /* ... */ block comments
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      // Strip // line comments (but not inside strings — best-effort)
+      .replace(/^\s*\/\/.*$/gm, "")
+      // Strip trailing comma before ] or }
+      .replace(/,\s*([\]}])/g, "$1");
+    try { return JSON.parse(repaired); } catch (e2) {
+      const preview = slice.slice(0, 200).replace(/\s+/g, " ");
+      throw new Error(`Malformed JSON: ${e2.message}. Snippet: ${preview}…`);
+    }
+  }
 }
 
 // ─── Word Search Logic ───────────────────────────────────────────────────────
