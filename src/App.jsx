@@ -169,16 +169,53 @@ const GS = `
   /* ── Word Search ── */
   .ws-outer { display: flex; justify-content: center; width: 100%; }
   .ws-layout { display: flex; flex-direction: column; align-items: center; gap: 20px; }
-  .ws-grid-wrap { overflow-x: auto; display: flex; justify-content: center; }
-  .ws-grid { display: inline-grid; border: 2px solid var(--navy); border-radius: 4px; overflow: hidden; box-shadow: 5px 5px 0 var(--navy); cursor: crosshair; }
-  .ws-cell { width: var(--cell, 34px); height: var(--cell, 34px); display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: calc(var(--cell, 34px) * 0.42); font-weight: 500; color: var(--ink); border: 1px solid rgba(28,37,54,0.09); transition: background 0.1s, color 0.1s; user-select: none; text-transform: uppercase; }
-  .ws-cell.selecting { background: rgba(232,88,42,0.22); }
-  .ws-cell.found { background: var(--coral); color: white; font-weight: 700; }
+  .ws-grid-wrap { display: flex; justify-content: center; }
+  .ws-grid {
+    display: inline-grid; border: 2px solid var(--navy); border-radius: 4px;
+    overflow: hidden; box-shadow: 5px 5px 0 var(--navy);
+    cursor: crosshair;
+    touch-action: none;             /* don't scroll while dragging on touch */
+    -webkit-touch-callout: none;    /* no iOS press-and-hold callout */
+    -webkit-user-select: none; user-select: none;
+    position: relative;
+  }
+  .ws-cell {
+    width: var(--cell, 34px); height: var(--cell, 34px);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace; font-size: calc(var(--cell, 34px) * 0.42);
+    font-weight: 500; color: var(--ink);
+    border: 1px solid rgba(28,37,54,0.09);
+    transition: background 0.08s ease, color 0.08s ease;
+    user-select: none; -webkit-user-select: none;
+    text-transform: uppercase;
+    position: relative;
+  }
+  /* loose: cursor moved off-line; in-line: cells form a valid straight selection */
+  .ws-cell.selecting { background: rgba(232,88,42,0.10); }
+  .ws-cell.in-line { background: rgba(232,88,42,0.28); color: var(--coral); font-weight: 700; }
+  .ws-cell.found {
+    background: var(--coral); color: white; font-weight: 700;
+    animation: wsCellPop 0.32s ease-out;
+  }
+  @keyframes wsCellPop {
+    0% { transform: scale(1); }
+    45% { transform: scale(1.16); background: var(--coral-light); }
+    100% { transform: scale(1); }
+  }
   .ws-words { background: var(--white); border: 1px solid var(--border-light); border-radius: 14px; padding: 20px; width: 100%; box-shadow: var(--shadow-sm); }
-  .ws-words-title { font-family: 'Inter', sans-serif; font-size: 0.82rem; font-weight: 700; color: var(--ink); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-light); }
+  .ws-words-title { font-family: 'Inter', sans-serif; font-size: 0.82rem; font-weight: 700; color: var(--ink); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--border-light); display: flex; align-items: center; justify-content: space-between; }
   .ws-words-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
   .ws-word-item { font-family: 'DM Mono', monospace; font-size: 0.78rem; color: var(--body); padding: 4px 6px; border-radius: 4px; transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.5px; }
-  .ws-word-item.found { text-decoration: line-through; text-decoration-color: var(--coral); text-decoration-thickness: 2px; color: var(--muted); opacity: 0.55; }
+  .ws-word-item.found {
+    text-decoration: line-through; text-decoration-color: var(--coral); text-decoration-thickness: 2px;
+    color: var(--muted); opacity: 0.55;
+    animation: wsWordStrike 0.45s ease both;
+  }
+  @keyframes wsWordStrike {
+    0% { transform: scale(1); color: var(--coral); opacity: 1; }
+    50% { transform: scale(1.06); }
+    100% { transform: scale(1); color: var(--muted); opacity: 0.55; }
+  }
   .progress-bar-wrap { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-light); }
   .progress-label { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); margin-bottom: 6px; letter-spacing: 1px; }
   .progress-bar { height: 5px; background: var(--border-light); border-radius: 99px; overflow: hidden; }
@@ -725,13 +762,46 @@ function generateSudoku(difficulty) {
 }
 
 // ─── API Call ────────────────────────────────────────────────────────────────
+// The /api/claude serverless function decides which provider/model to use.
+// As of May 2026 it proxies to Google's Gemini API (free tier). The `model`
+// field here is informational only — the proxy ignores it. Likewise the
+// `useWebSearch` flag is currently a no-op on the Gemini proxy.
 async function callClaude(prompt, useWebSearch = false, maxTokens = 1000) {
-  const body = { model: "claude-sonnet-4-20250514", max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] };
+  const body = {
+    model: "auto",
+    max_tokens: maxTokens,
+    messages: [{ role: "user", content: prompt }],
+  };
   if (useWebSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
-  const res = await fetch("/api/claude", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error?.message || "API error");
-  return data.content.map(b => b.type === "text" ? b.text : "").filter(Boolean).join("\n");
+
+  const res = await fetch("/api/claude", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  // Read as text first so we can produce a meaningful error if the response
+  // isn't JSON (e.g. /api/claude is missing and Vercel served index.html).
+  const raw = await res.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    const ct = res.headers.get("content-type") || "unknown";
+    const preview = raw.slice(0, 200).replace(/\s+/g, " ").trim();
+    throw new Error(
+      `Server returned non-JSON (status ${res.status}, content-type "${ct}"). ` +
+      `First 200 chars: ${preview || "(empty)"}`
+    );
+  }
+
+  if (!res.ok) {
+    const msg = data?.error?.message || data?.error || `HTTP ${res.status}`;
+    const preview = data?.error?.preview ? ` — ${data.error.preview}` : "";
+    throw new Error(`${msg}${preview}`);
+  }
+
+  return data.content.map(b => (b.type === "text" ? b.text : "")).filter(Boolean).join("\n");
 }
 
 function parseJSON(raw) {
@@ -898,65 +968,233 @@ function WordSearchPuzzle({ data, difficulty, onWin }) {
   const sizeMap = { Beginner: 12, Intermediate: 14, Advanced: 16, Extreme: 18 };
   const size = sizeMap[difficulty] || 14;
   const upperWords = useMemo(() => data.words.map(w => w.toUpperCase()), [data.words]);
-  const { grid, placed } = useMemo(() => buildWordSearchGrid(upperWords, size, difficulty), [upperWords.join(","), size, difficulty]);
+  const { grid, placed } = useMemo(
+    () => buildWordSearchGrid(upperWords, size, difficulty),
+    [upperWords.join(","), size, difficulty]
+  );
   const { elapsed, running, done, start, stop } = useTimer();
-  const isDragging = useRef(false), dragStart = useRef(null);
-  const [selecting, setSelecting] = useState([]);
-  const [found, setFound] = useState([]);
-  const wonRef = useRef(false);
 
-  const foundCells = useMemo(() => new Set(found.flatMap(f => f.cells.map(([r,c]) => `${r},${c}`))), [found]);
-  const selSet = useMemo(() => new Set(selecting.map(([r,c]) => `${r},${c}`)), [selecting]);
-  const buildSelection = (r0,c0,r1,c1) => {
-    const dr=r1-r0, dc=c1-c0, len=Math.max(Math.abs(dr),Math.abs(dc));
-    if(len===0) return [[r0,c0]];
-    const ndr=dr===0?0:dr/Math.abs(dr), ndc=dc===0?0:dc/Math.abs(dc);
-    const cells=[];
-    for(let i=0;i<=len;i++) cells.push([r0+ndr*i,c0+ndc*i]);
-    return cells;
-  };
-  const handleCellDown = (r,c) => { start(); isDragging.current=true; dragStart.current=[r,c]; setSelecting([[r,c]]); };
-  const handleCellEnter = (r,c) => { if(!isDragging.current||!dragStart.current) return; const [r0,c0]=dragStart.current; setSelecting(buildSelection(r0,c0,r,c)); };
-  const handleMouseUp = () => {
-    isDragging.current=false; dragStart.current=null;
-    if(selecting.length>1) {
-      const forward=selecting.map(([r,c])=>grid[r][c]).join(""), backward=forward.split("").reverse().join("");
-      const match=placed.find(p=>p.word===forward||p.word===backward);
-      if(match&&!found.find(f=>f.word===match.word)) {
-        const newFound=[...found, match];
-        setFound(newFound);
-        if(newFound.length===upperWords.length && !wonRef.current) { wonRef.current=true; stop(); setTimeout(()=>onWin(elapsed+1),200); }
-      }
+  // Refs for stable closures
+  const isDragging = useRef(false);
+  const dragStart = useRef(null);
+  const elapsedRef = useRef(0);
+  const foundRef = useRef([]);
+  const wonRef = useRef(false);
+  const gridElRef = useRef(null);
+
+  const [selecting, setSelecting] = useState([]);   // straight-line cells (or just the start)
+  const [isLineValid, setIsLineValid] = useState(true); // true when current drag is a straight line
+  const [found, setFound] = useState([]);
+
+  useEffect(() => { elapsedRef.current = elapsed; }, [elapsed]);
+  useEffect(() => { foundRef.current = found; }, [found]);
+
+  // ── Responsive cell sizing (resize-aware) ────────────────────────────────
+  const [viewportW, setViewportW] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth : 1024
+  );
+  useEffect(() => {
+    const onResize = () => setViewportW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
+  }, []);
+  // Leave ~32px breathing room on the sides; clamp between 22 and 38 px per cell.
+  const cellSize = Math.max(22, Math.min(38, Math.floor((Math.min(viewportW, 1000) - 48) / size)));
+  const gridWidth = size * cellSize + 4;
+
+  const foundCells = useMemo(
+    () => new Set(found.flatMap(f => f.cells.map(([r, c]) => `${r},${c}`))),
+    [found]
+  );
+  const selSet = useMemo(
+    () => new Set(selecting.map(([r, c]) => `${r},${c}`)),
+    [selecting]
+  );
+
+  // Build the cell path from (r0,c0) to (r1,c1). If they don't form a straight
+  // line (horizontal, vertical, or diagonal at exactly 45°), snap to whichever
+  // axis is dominant — but flag that the line is "loose" so the UI can show it.
+  const buildSelection = (r0, c0, r1, c1) => {
+    const dr = r1 - r0, dc = c1 - c0;
+    if (dr === 0 && dc === 0) return { cells: [[r0, c0]], valid: true };
+    const absR = Math.abs(dr), absC = Math.abs(dc);
+    // Valid: pure horizontal, pure vertical, or exact diagonal.
+    const valid = dr === 0 || dc === 0 || absR === absC;
+    let ndr, ndc, len;
+    if (valid) {
+      len = Math.max(absR, absC);
+      ndr = dr === 0 ? 0 : dr / absR;
+      ndc = dc === 0 ? 0 : dc / absC;
+    } else {
+      // Snap to dominant axis so user gets clear preview, but mark invalid.
+      if (absC >= absR) { ndr = 0; ndc = dc / absC; len = absC; }
+      else              { ndc = 0; ndr = dr / absR; len = absR; }
     }
-    setSelecting([]);
+    const cells = [];
+    for (let i = 0; i <= len; i++) cells.push([r0 + ndr * i, c0 + ndc * i]);
+    return { cells, valid };
   };
-  const cancelDrag = () => { if(isDragging.current) { isDragging.current=false; dragStart.current=null; setSelecting([]); } };
-  const pct = Math.round(found.length/upperWords.length*100);
-  const cellSize = Math.min(36, Math.floor((window.innerWidth*0.85)/size));
-  const gridWidth = size*cellSize+4;
+
+  const beginDrag = (r, c) => {
+    start();
+    isDragging.current = true;
+    dragStart.current = [r, c];
+    setSelecting([[r, c]]);
+    setIsLineValid(true);
+  };
+
+  const updateDrag = (r, c) => {
+    if (!isDragging.current || !dragStart.current) return;
+    const [r0, c0] = dragStart.current;
+    const { cells, valid } = buildSelection(r0, c0, r, c);
+    setSelecting(cells);
+    setIsLineValid(valid);
+  };
+
+  const endDrag = useCallback(() => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+    dragStart.current = null;
+    // Read latest selecting via the functional setter to avoid stale closure
+    setSelecting(curr => {
+      if (curr.length > 1) {
+        const forward = curr.map(([r, c]) => grid[r]?.[c] || "").join("");
+        const backward = forward.split("").reverse().join("");
+        const match = placed.find(p => p.word === forward || p.word === backward);
+        if (match && !foundRef.current.find(f => f.word === match.word)) {
+          const newFound = [...foundRef.current, match];
+          foundRef.current = newFound;
+          setFound(newFound);
+          if (newFound.length === upperWords.length && !wonRef.current) {
+            wonRef.current = true;
+            stop();
+            const finalElapsed = elapsedRef.current + 1;
+            setTimeout(() => onWin(finalElapsed), 240);
+          }
+        }
+      }
+      return [];
+    });
+    setIsLineValid(true);
+  }, [grid, placed, upperWords.length, stop, onWin]);
+
+  // ── Mouse handlers ───────────────────────────────────────────────────────
+  const onCellMouseDown = (r, c) => (e) => { e.preventDefault(); beginDrag(r, c); };
+  const onCellMouseEnter = (r, c) => () => updateDrag(r, c);
+
+  // ── Touch handlers: use document.elementFromPoint to track the finger ────
+  // We attach these as NATIVE non-passive listeners (see useEffect below) so
+  // that preventDefault() actually stops the page from scrolling. React
+  // synthetic touch listeners are passive in React 17+, so preventDefault is
+  // a no-op there.
+  const cellFromPoint = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    const cell = el.closest?.("[data-ws-cell]");
+    if (!cell) return null;
+    const r = Number(cell.dataset.r), c = Number(cell.dataset.c);
+    if (Number.isNaN(r) || Number.isNaN(c)) return null;
+    return [r, c];
+  };
+
+  useEffect(() => {
+    const el = gridElRef.current;
+    if (!el) return;
+    const onTouchStart = (e) => {
+      const t = e.touches[0]; if (!t) return;
+      const rc = cellFromPoint(t.clientX, t.clientY);
+      if (rc) { e.preventDefault(); beginDrag(rc[0], rc[1]); }
+    };
+    const onTouchMove = (e) => {
+      if (!isDragging.current) return;
+      const t = e.touches[0]; if (!t) return;
+      const rc = cellFromPoint(t.clientX, t.clientY);
+      if (rc) { e.preventDefault(); updateDrag(rc[0], rc[1]); }
+    };
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove",  onTouchMove,  { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove",  onTouchMove);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid, placed]);  // re-bind if grid identity changes
+
+  // Window-level release: drag ends cleanly even if the pointer/finger
+  // releases outside the grid.
+  useEffect(() => {
+    const upHandler = () => endDrag();
+    window.addEventListener("mouseup", upHandler);
+    window.addEventListener("touchend", upHandler);
+    window.addEventListener("touchcancel", upHandler);
+    return () => {
+      window.removeEventListener("mouseup", upHandler);
+      window.removeEventListener("touchend", upHandler);
+      window.removeEventListener("touchcancel", upHandler);
+    };
+  }, [endDrag]);
+
+  const pct = Math.round((found.length / upperWords.length) * 100);
 
   return (
-    <div className="ws-layout" style={{ width: gridWidth }}>
-      <div style={{ display:"flex", justifyContent:"space-between", width:"100%", alignItems:"center" }}>
-        <div className="ws-words-title" style={{ marginBottom:0, paddingBottom:0, borderBottom:"none" }}>Find {upperWords.length} Words</div>
+    <div className="ws-layout" style={{ width: gridWidth, maxWidth: "100%" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", width: "100%", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div className="ws-words-title" style={{ marginBottom: 0, paddingBottom: 0, borderBottom: "none", display: "block" }}>
+          Find {upperWords.length} Words · {found.length} found
+        </div>
         <TimerDisplay elapsed={elapsed} running={running} done={done} />
       </div>
-      <div className="ws-grid-wrap" onMouseLeave={cancelDrag} style={{ width: gridWidth }}>
-        <div className="ws-grid" style={{ gridTemplateColumns:`repeat(${size},1fr)`, "--cell":`${cellSize}px` }} onMouseUp={handleMouseUp}>
-          {grid.map((row,r)=>row.map((letter,c)=>{
-            const key=`${r},${c}`, isSel=selSet.has(key), isFound=foundCells.has(key);
-            return <div key={key} className={`ws-cell${isSel?" selecting":""}${isFound?" found":""}`} onMouseDown={()=>handleCellDown(r,c)} onMouseEnter={()=>handleCellEnter(r,c)}>{letter}</div>;
+
+      <div className="ws-grid-wrap" style={{ width: gridWidth, maxWidth: "100%" }}>
+        <div
+          ref={gridElRef}
+          className="ws-grid"
+          style={{ gridTemplateColumns: `repeat(${size},1fr)`, "--cell": `${cellSize}px` }}
+        >
+          {grid.map((row, r) => row.map((letter, c) => {
+            const key = `${r},${c}`;
+            const isSel = selSet.has(key);
+            const isFound = foundCells.has(key);
+            const cls =
+              "ws-cell" +
+              (isFound ? " found" : "") +
+              (isSel && !isFound ? (isLineValid ? " in-line" : " selecting") : "");
+            return (
+              <div
+                key={key}
+                data-ws-cell
+                data-r={r}
+                data-c={c}
+                className={cls}
+                onMouseDown={onCellMouseDown(r, c)}
+                onMouseEnter={onCellMouseEnter(r, c)}
+              >
+                {letter}
+              </div>
+            );
           }))}
         </div>
       </div>
-      <div className="ws-words" style={{ width: gridWidth }}>
-        <div className="ws-words-title">Find the Words</div>
+
+      <div className="ws-words" style={{ width: gridWidth, maxWidth: "100%" }}>
+        <div className="ws-words-title">
+          <span>Word List</span>
+          <span style={{ fontFamily: "'DM Mono',monospace", fontSize: "0.7rem", color: "var(--muted)", letterSpacing: "1px" }}>
+            {found.length}/{upperWords.length}
+          </span>
+        </div>
         <div className="ws-words-list">
-          {upperWords.map(w=><div key={w} className={`ws-word-item${found.find(f=>f.word===w)?" found":""}`}>{w}</div>)}
+          {upperWords.map(w => (
+            <div key={w} className={`ws-word-item${found.find(f => f.word === w) ? " found" : ""}`}>{w}</div>
+          ))}
         </div>
         <div className="progress-bar-wrap">
-          <div className="progress-label">PROGRESS — {found.length}/{upperWords.length}</div>
-          <div className="progress-bar"><div className="progress-fill" style={{ width:`${pct}%` }} /></div>
+          <div className="progress-label">PROGRESS — {pct}%</div>
+          <div className="progress-bar"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
         </div>
       </div>
     </div>
